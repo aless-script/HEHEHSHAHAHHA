@@ -1,0 +1,293 @@
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local VirtualInputManager = game:GetService("VirtualInputManager")
+local Workspace = game:GetService("Workspace")
+
+local plr = Players.LocalPlayer
+
+-- CONFIG
+local Configuration = {
+    TeleportDelay = 0.8,
+    RecupCrate = 6,
+    SellCrate = 6,
+
+    CapturePoint = Vector3.new(-503,183,-1021),
+
+    OilBarrels = {
+        Vector3.new(-1938,121,-3700),
+        Vector3.new(-1208,73,-881),
+        Vector3.new(1705,121,3779)
+    }
+}
+
+local farming = false
+local collectingBarrels = false
+local sellPosition = nil
+
+-- ROOT
+local function getRoot()
+    local char = plr.Character or plr.CharacterAdded:Wait()
+    return char:WaitForChild("HumanoidRootPart")
+end
+
+-- FIND PLAYER TYCOON
+local function findPlayerTycoon()
+    for _,tycoon in pairs(workspace.Tycoon.Tycoons:GetChildren()) do
+        if tycoon:FindFirstChild("Owner") and tycoon.Owner.Value == plr then
+            return tycoon
+        end
+    end
+end
+
+-- STORE SELL POSITION
+local function storeSellPosition()
+    local tycoon = findPlayerTycoon()
+    if not tycoon then return end
+
+    local oil = tycoon:FindFirstChild("Essentials")
+        and tycoon.Essentials:FindFirstChild("Oil Collector")
+
+    if oil then
+        local part = oil:FindFirstChild("Collector")
+            and oil.Collector:FindFirstChild("Plane")
+
+        if part then
+            sellPosition = part.CFrame * CFrame.new(0,3,0)
+        end
+    end
+end
+
+-- CHECK GREEN BUTTON
+local function isGreenButton(btn)
+    local neon = btn:FindFirstChild("Neon") or btn:FindFirstChild("Button")
+    if neon then
+        local c = neon.Color
+        return c.G > c.R and c.G > c.B
+    end
+end
+
+-- AUTO UPGRADE BASE
+local function autoUpgradeBase()
+
+    local tycoon = findPlayerTycoon()
+    if not tycoon then return end
+
+    local buttons = tycoon:FindFirstChild("UnpurchasedButtons")
+    if not buttons then return end
+
+    for _,btn in pairs(buttons:GetChildren()) do
+
+        if not farming then break end
+
+        if isGreenButton(btn) then
+
+            local neon = btn:FindFirstChild("Neon") or btn:FindFirstChild("Button")
+
+            if neon then
+                local root = getRoot()
+
+                root.CFrame = neon.CFrame + Vector3.new(0,5,0)
+
+                task.wait(Configuration.TeleportDelay)
+
+                VirtualInputManager:SendKeyEvent(true,Enum.KeyCode.E,false,game)
+                task.wait(.2)
+                VirtualInputManager:SendKeyEvent(false,Enum.KeyCode.E,false,game)
+
+                task.wait(.3)
+            end
+        end
+    end
+end
+
+-- COLLECT CRATE
+local function collectCrate()
+
+    local crates = workspace:FindFirstChild("Game Systems")
+        and workspace["Game Systems"]:FindFirstChild("Crate Workspace")
+
+    if not crates then return end
+
+    for _,crate in pairs(crates:GetChildren()) do
+
+        if crate:IsA("BasePart") and crate.Name:find("Crate") then
+
+            local root = getRoot()
+
+            root.CFrame = crate.CFrame * CFrame.new(3,0,0)
+
+            task.wait(Configuration.TeleportDelay)
+
+            VirtualInputManager:SendKeyEvent(true,Enum.KeyCode.E,false,game)
+            task.wait(Configuration.RecupCrate)
+            VirtualInputManager:SendKeyEvent(false,Enum.KeyCode.E,false,game)
+
+            if not sellPosition then
+                storeSellPosition()
+            end
+
+            if sellPosition then
+
+                root.CFrame = sellPosition
+
+                task.wait(Configuration.TeleportDelay)
+
+                VirtualInputManager:SendKeyEvent(true,Enum.KeyCode.E,false,game)
+                task.wait(Configuration.SellCrate)
+                VirtualInputManager:SendKeyEvent(false,Enum.KeyCode.E,false,game)
+
+            end
+
+            break
+        end
+    end
+end
+
+-- OIL BARREL LOOP
+local function barrelLoop()
+
+    while collectingBarrels do
+
+        for _,pos in pairs(Configuration.OilBarrels) do
+
+            if not collectingBarrels then break end
+
+            local root = getRoot()
+
+            root.CFrame = CFrame.new(pos)
+
+            task.wait(Configuration.TeleportDelay)
+
+            VirtualInputManager:SendKeyEvent(true,Enum.KeyCode.E,false,game)
+            task.wait(Configuration.RecupCrate)
+            VirtualInputManager:SendKeyEvent(false,Enum.KeyCode.E,false,game)
+
+            if not sellPosition then
+                storeSellPosition()
+            end
+
+            if sellPosition then
+
+                root.CFrame = sellPosition
+
+                task.wait(Configuration.TeleportDelay)
+
+                VirtualInputManager:SendKeyEvent(true,Enum.KeyCode.E,false,game)
+                task.wait(Configuration.SellCrate)
+                VirtualInputManager:SendKeyEvent(false,Enum.KeyCode.E,false,game)
+
+            end
+
+            task.wait(1)
+        end
+    end
+end
+
+-- AUTO FARM LOOP
+local function startFarm()
+
+    if farming then return end
+
+    farming = true
+
+    repeat task.wait() until findPlayerTycoon()
+    storeSellPosition()
+
+    RunService.Heartbeat:Connect(function()
+
+        if not farming then return end
+
+        autoUpgradeBase()
+
+        collectCrate()
+
+    end)
+end
+
+-- UI
+local ScreenGui = Instance.new("ScreenGui",game.CoreGui)
+
+local Frame = Instance.new("Frame",ScreenGui)
+Frame.Size = UDim2.new(0,230,0,160)
+Frame.Position = UDim2.new(.1,0,.4,0)
+Frame.BackgroundColor3 = Color3.fromRGB(18,18,18)
+Frame.Active = true
+Frame.Draggable = true
+
+Instance.new("UICorner",Frame).CornerRadius = UDim.new(0,12)
+
+local Layout = Instance.new("UIListLayout",Frame)
+Layout.Padding = UDim.new(0,6)
+
+local function createToggle(name,callback)
+
+    local btn = Instance.new("TextButton",Frame)
+    btn.Size = UDim2.new(1,-10,0,35)
+    btn.BackgroundColor3 = Color3.fromRGB(30,30,30)
+    btn.TextColor3 = Color3.new(1,1,1)
+    btn.Font = Enum.Font.GothamBold
+    btn.TextSize = 14
+
+    Instance.new("UICorner",btn).CornerRadius = UDim.new(0,8)
+
+    local state=false
+
+    btn.Text=name..": OFF"
+
+    btn.MouseButton1Click:Connect(function()
+
+        state=not state
+
+        btn.Text=name..(state and ": ON" or ": OFF")
+
+        btn.BackgroundColor3= state and Color3.fromRGB(50,150,50) or Color3.fromRGB(30,30,30)
+
+        callback(state)
+
+    end)
+end
+
+local function createButton(name,callback)
+
+    local btn = Instance.new("TextButton",Frame)
+    btn.Size = UDim2.new(1,-10,0,35)
+    btn.BackgroundColor3 = Color3.fromRGB(30,30,30)
+    btn.TextColor3 = Color3.new(1,1,1)
+    btn.Font = Enum.Font.GothamBold
+    btn.TextSize = 14
+    btn.Text = name
+
+    Instance.new("UICorner",btn).CornerRadius = UDim.new(0,8)
+
+    btn.MouseButton1Click:Connect(callback)
+end
+
+-- TOGGLES
+
+createToggle("Auto Farm",function(state)
+
+    farming = state
+
+    if state then
+        startFarm()
+    end
+
+end)
+
+createToggle("Auto Oil Barrels",function(state)
+
+    collectingBarrels = state
+
+    if state then
+        task.spawn(barrelLoop)
+    end
+
+end)
+
+createButton("TP Capture Point",function()
+
+    getRoot().CFrame = CFrame.new(Configuration.CapturePoint)
+
+end)
+
+print("War Tycoon AutoFarm Loaded")
